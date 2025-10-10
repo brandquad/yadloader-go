@@ -1,4 +1,4 @@
-module yadloader-go
+module yadloader
 
 go 1.24
 
