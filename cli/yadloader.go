@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -75,29 +74,28 @@ func main() {
 	params := parseFlags()
 
 	client := yadloader.NewYaDiskClient(yadloader.NewDefaultConfig())
-	//files, err := client.GetTree(ctx, "https://disk.yandex.ru/d/EWMbU0TAVn8fIA", "/Цифры/Вертикальные")
 	files, err := client.GetTree(ctx, params.Link, params.Path)
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 
 	if params.Folder == "" {
 		for _, file := range files {
-			log.Println(file.Path, file.File)
+			fmt.Println(file.Path, file.File)
 		}
 		os.Exit(0)
 	}
 
 	output := params.Folder
 	if err := makeFolder(output, 0755); err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 
 	for _, file := range files {
 		finalPath := strings.TrimSuffix(file.Path, file.Name)
 		finalFolder := filepath.Join(output, finalPath)
 		if err := makeFolder(finalFolder, 0755); err != nil {
-			log.Fatal(err)
+			panic(err)
 		}
 
 		finalPath = filepath.Join(finalFolder, file.Name)
@@ -105,17 +103,17 @@ func main() {
 		var download = func(path string) error {
 			f, err := os.Create(finalPath)
 			if err != nil {
-				log.Fatal(err)
+				panic(err)
 			}
 			defer f.Close()
 			if err := client.DownloadFile(ctx, file, f); err != nil {
-				log.Fatal(err)
+				panic(err)
 			}
 			return nil
 		}
 
 		if err := download(finalPath); err != nil {
-			log.Fatal(err)
+			panic(err)
 		}
 
 	}
