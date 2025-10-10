@@ -72,8 +72,10 @@ func parseFlags() *Args {
 func main() {
 	ctx := context.Background()
 	params := parseFlags()
-
-	client := yadloader.NewYaDiskClient(yadloader.NewDefaultConfig())
+	cfg := yadloader.NewDefaultConfig()
+	cfg.Wait = 0
+	cfg.Timeout = 0
+	client := yadloader.NewYaDiskClient(cfg)
 	files, err := client.GetTree(ctx, params.Link, params.Path)
 	if err != nil {
 		panic(err)
@@ -91,7 +93,15 @@ func main() {
 		panic(err)
 	}
 
+	var totalSize int64
 	for _, file := range files {
+		totalSize += file.Size
+	}
+
+	fmt.Printf("Total files %d, total size %d", len(files), totalSize)
+
+	for _, file := range files {
+
 		finalPath := strings.TrimSuffix(file.Path, file.Name)
 		finalFolder := filepath.Join(output, finalPath)
 		if err := makeFolder(finalFolder, 0755); err != nil {
