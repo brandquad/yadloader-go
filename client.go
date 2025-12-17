@@ -30,6 +30,8 @@ func NewDefaultConfig() *Config {
 	}
 }
 
+type GetTreeCallback func(count int64, totalSize int64)
+
 type YaDiskClient struct {
 	client *retryablehttp.Client
 	config *Config
@@ -74,13 +76,27 @@ func (c *YaDiskClient) request(ctx context.Context, url string) ([]byte, error) 
 	return body, nil
 }
 
-func (c *YaDiskClient) GetTree(ctx context.Context, link, path string) ([]diskFile, error) {
+func (c *YaDiskClient) GetTree(ctx context.Context, link, path string, cb GetTreeCallback) ([]diskFile, error) {
 
 	if path == "" {
 		path = "/"
 	}
 	var offset = 0
 	var files []diskFile
+
+	notify := func() {
+		if cb != nil {
+			var (
+				totalSize, counter int64
+			)
+
+			for _, f := range files {
+				totalSize += f.Size
+				counter++
+			}
+			cb(counter, totalSize)
+		}
+	}
 
 	for {
 
@@ -109,6 +125,7 @@ func (c *YaDiskClient) GetTree(ctx context.Context, link, path string) ([]diskFi
 
 			switch i.Type {
 			case FILE:
+				before := len(files)
 				files = append(files, diskFile{
 					Name:     i.Name,
 					Size:     *i.Size,
@@ -119,12 +136,16 @@ func (c *YaDiskClient) GetTree(ctx context.Context, link, path string) ([]diskFi
 					Created:  i.Created,
 					Modified: i.Modified,
 				})
+				if len(files) != before {
+					notify()
+				}
 			case DIR:
-				subFiles, err := c.GetTree(ctx, link, i.Path)
+				subFiles, err := c.GetTree(ctx, link, i.Path, cb)
 				if err != nil {
 					return nil, err
 				}
 				if subFiles != nil {
+					before := len(files)
 					for _, f := range subFiles {
 						files = append(files, diskFile{
 							Name:     f.Name,
@@ -136,6 +157,9 @@ func (c *YaDiskClient) GetTree(ctx context.Context, link, path string) ([]diskFi
 							Created:  f.Created,
 							Modified: f.Modified,
 						})
+					}
+					if len(files) != before {
+						notify()
 					}
 				}
 			}
