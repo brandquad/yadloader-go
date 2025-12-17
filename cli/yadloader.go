@@ -7,7 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"yadloader"
+
+	"github.com/brandquad/yadloader-go"
 )
 
 func makeFolder(folder string, perm os.FileMode) error {

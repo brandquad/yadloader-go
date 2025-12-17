@@ -1,4 +1,4 @@
-module yadloader
+module github.com/brandquad/yadloader-go
 
 go 1.24
 
