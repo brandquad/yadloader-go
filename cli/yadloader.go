@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -77,7 +78,9 @@ func main() {
 	cfg.Wait = 0
 	cfg.Timeout = 0
 	client := yadloader.NewYaDiskClient(cfg)
-	files, err := client.GetTree(ctx, params.Link, params.Path)
+	files, err := client.GetTree(ctx, params.Link, params.Path, func(count int64, totalSize int64) {
+		log.Printf("Files: %d, Size: %d", count, totalSize)
+	})
 	if err != nil {
 		panic(err)
 	}

@@ -41,6 +41,8 @@ func NewYaDiskClient(config *Config) *YaDiskClient {
 	retryClient := retryablehttp.NewClient()
 	retryClient.RetryWaitMin = config.Wait
 	retryClient.RetryMax = config.MaxTries
+	retryClient.Logger = nil
+
 	return &YaDiskClient{
 		client: retryClient,
 		config: config,
@@ -76,30 +78,43 @@ func (c *YaDiskClient) request(ctx context.Context, url string) ([]byte, error) 
 	return body, nil
 }
 
-func (c *YaDiskClient) GetTree(ctx context.Context, link, path string, cb GetTreeCallback) ([]diskFile, error) {
-
+func (c *YaDiskClient) GetTree(ctx context.Context, link, path string, cb ...GetTreeCallback) ([]diskFile, error) {
 	if path == "" {
 		path = "/"
 	}
-	var offset = 0
-	var files []diskFile
+
+	var callback GetTreeCallback
+	if len(cb) > 0 {
+		callback = cb[0]
+	}
+
+	files := make([]diskFile, 0, c.config.Limit)
+	var count int64
+	var totalSize int64
+
+	if err := c.getTree(ctx, link, path, &files, &count, &totalSize, callback); err != nil {
+		return nil, err
+	}
+	return files, nil
+}
+
+func (c *YaDiskClient) getTree(
+	ctx context.Context,
+	link, path string,
+	files *[]diskFile,
+	count *int64,
+	totalSize *int64,
+	cb GetTreeCallback,
+) error {
+	offset := 0
 
 	notify := func() {
 		if cb != nil {
-			var (
-				totalSize, counter int64
-			)
-
-			for _, f := range files {
-				totalSize += f.Size
-				counter++
-			}
-			cb(counter, totalSize)
+			cb(*count, *totalSize)
 		}
 	}
 
 	for {
-
 		args := c.makeParams(map[string]string{
 			"path":       path,
 			"limit":      strconv.Itoa(c.config.Limit),
@@ -109,24 +124,22 @@ func (c *YaDiskClient) GetTree(ctx context.Context, link, path string, cb GetTre
 
 		resp, err := c.request(ctx, fmt.Sprintf("https://cloud-api.yandex.net/v1/disk/public/resources?%s", args))
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		var r response
-
 		if err = json.Unmarshal(resp, &r); err != nil {
-			return nil, err
+			return err
 		}
 
 		if r.Embedded == nil || r.Embedded.Items == nil || len(r.Embedded.Items) == 0 {
 			break
 		}
-		for _, i := range r.Embedded.Items {
 
+		for _, i := range r.Embedded.Items {
 			switch i.Type {
 			case FILE:
-				before := len(files)
-				files = append(files, diskFile{
+				*files = append(*files, diskFile{
 					Name:     i.Name,
 					Size:     *i.Size,
 					File:     *i.File,
@@ -136,31 +149,15 @@ func (c *YaDiskClient) GetTree(ctx context.Context, link, path string, cb GetTre
 					Created:  i.Created,
 					Modified: i.Modified,
 				})
-				if len(files) != before {
-					notify()
-				}
+
+				*count++
+				*totalSize += int64(*i.Size)
+
+				notify()
+
 			case DIR:
-				subFiles, err := c.GetTree(ctx, link, i.Path, cb)
-				if err != nil {
-					return nil, err
-				}
-				if subFiles != nil {
-					before := len(files)
-					for _, f := range subFiles {
-						files = append(files, diskFile{
-							Name:     f.Name,
-							Size:     f.Size,
-							File:     f.File,
-							Path:     f.Path,
-							MD5:      f.MD5,
-							SHA256:   f.SHA256,
-							Created:  f.Created,
-							Modified: f.Modified,
-						})
-					}
-					if len(files) != before {
-						notify()
-					}
+				if err := c.getTree(ctx, link, i.Path, files, count, totalSize, cb); err != nil {
+					return err
 				}
 			}
 		}
@@ -169,7 +166,7 @@ func (c *YaDiskClient) GetTree(ctx context.Context, link, path string, cb GetTre
 		time.Sleep(c.config.Timeout)
 	}
 
-	return files, nil
+	return nil
 }
 
 func (c *YaDiskClient) DownloadFile(ctx context.Context, file diskFile, writer io.Writer) error {
